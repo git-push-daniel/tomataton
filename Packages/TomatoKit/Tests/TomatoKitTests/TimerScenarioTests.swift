@@ -4,21 +4,27 @@ import Testing
 
 /// End-to-end runs through whole cycles, the way the app drives the engine.
 @Suite struct TimerScenarioTests {
+    /// As long as ticks come within the auto-start grace period, how often
+    /// the app ticks doesn't change what gets recorded.
     @Test func tickGranularityDoesNotChangeOutcome() {
         var everySecond = TimerEngine(preset: nonstopPreset)
-        var oneBigTick = TimerEngine(preset: nonstopPreset)
+        var everyFewMinutes = TimerEngine(preset: nonstopPreset)
         everySecond.start(now: at(0))
-        oneBigTick.start(now: at(0))
+        everyFewMinutes.start(now: at(0))
 
         let end = minutes(120)
         var fine: [SessionRecord] = []
         for second in stride(from: 1.0, through: end, by: 1) {
             fine += everySecond.tick(now: at(second))
         }
-        let coarse = oneBigTick.tick(now: at(end))
+        var coarse: [SessionRecord] = []
+        for second in stride(from: TimerEngine.autoStartGrace, through: end, by: TimerEngine.autoStartGrace) {
+            coarse += everyFewMinutes.tick(now: at(second))
+        }
 
+        #expect(fine.count == 18)  // 4 sets of 4 phases (27 min each) + work 108–118 + break 118–120
         #expect(fine.withoutIDs == coarse.withoutIDs)
-        #expect(everySecond.state == oneBigTick.state)
+        #expect(everySecond.state == everyFewMinutes.state)
     }
 
     @Test func classicDayWithPauseAddsUpToActiveTime() {
@@ -34,7 +40,8 @@ import Testing
         engine.resume(now: at(minutes(63)))
         records += engine.tick(now: at(minutes(93)))  // work 3 (63–88) + break (88–93)
         engine.resume(now: at(minutes(93)))
-        records += engine.tick(now: at(minutes(133))) // work 4 (93–118) + long break (118–133)
+        records += engine.tick(now: at(minutes(118))) // work 4 (93–118)
+        records += engine.tick(now: at(minutes(133))) // long break (118–133)
 
         #expect(records.phases == [
             .work, .shortBreak, .work, .shortBreak, .work, .shortBreak, .work, .longBreak,

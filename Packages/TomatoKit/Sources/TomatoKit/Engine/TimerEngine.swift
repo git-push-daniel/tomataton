@@ -11,6 +11,10 @@ public struct TimerEngine: Sendable {
     public static let maximumRounds = 12
     /// Partial phases shorter than this aren't worth recording.
     static let minimumRecordedSeconds = 1
+    /// A phase that ended longer ago than this when `tick` noticed (the app
+    /// crashed or was killed) is still recorded, but doesn't auto-start the
+    /// next phase; it waits for the user instead of chaining for hours.
+    public static let autoStartGrace: TimeInterval = 5 * 60
 
     public private(set) var state: TimerState
 
@@ -90,10 +94,11 @@ public struct TimerEngine: Sendable {
     }
 
     /// Completes any phases whose end time has passed. Call this periodically
-    /// (e.g. every second from the UI) and on wake.
+    /// (e.g. every second from the UI).
     ///
     /// If auto-start is on, several phases may complete in one call, each
-    /// starting exactly when the previous one ended.
+    /// starting exactly when the previous one ended, as long as each ended
+    /// within `autoStartGrace` of `now`.
     @discardableResult
     public mutating func tick(now: Date) -> [SessionRecord] {
         var records: [SessionRecord] = []
@@ -102,7 +107,8 @@ public struct TimerEngine: Sendable {
             guard state.status == .running, let endsAt = state.endsAt, endsAt <= now else { break }
             records += record(.completed, now: endsAt)
             let next = nextPhase()
-            advance(startingAt: state.preset.autoStarts(next.phase) ? endsAt : nil)
+            let autoStart = state.preset.autoStarts(next.phase) && now.timeIntervalSince(endsAt) <= Self.autoStartGrace
+            advance(startingAt: autoStart ? endsAt : nil)
         }
         return records
     }

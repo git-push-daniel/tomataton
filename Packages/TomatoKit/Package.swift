@@ -7,8 +7,17 @@ let package = Package(
     products: [
         .library(name: "TomatoKit", targets: ["TomatoKit"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/groue/GRDB.swift", from: "7.12.0"),
+    ],
     targets: [
-        .target(name: "TomatoKit"),
-        .testTarget(name: "TomatoKitTests", dependencies: ["TomatoKit"]),
+        .target(
+            name: "TomatoKit",
+            dependencies: [.product(name: "GRDB", package: "GRDB.swift")]
+        ),
+        .testTarget(
+            name: "TomatoKitTests",
+            dependencies: ["TomatoKit", .product(name: "GRDB", package: "GRDB.swift")]
+        ),
     ]
 )

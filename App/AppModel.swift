@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import Observation
 import OSLog
 import TomatoKit
@@ -11,12 +11,15 @@ final class AppModel {
     private(set) var library: PresetLibrary
     /// Refreshed by the ticker so views that read it re-render the countdown.
     private(set) var now = Date.now
-    /// Kept in memory until history is persisted (milestone 4).
-    private(set) var records: [SessionRecord] = []
+    /// Today's sessions as loaded at launch, plus every session finished since.
+    private(set) var records: [SessionRecord]
 
     @ObservationIgnored private let presetStore: JSONFileStore<PresetLibrary>
+    /// nil if the database couldn't be opened; the app then still works, without history.
+    @ObservationIgnored private let history: HistoryStore?
     @ObservationIgnored private let notifications = NotificationService()
     @ObservationIgnored private var ticker: Task<Void, Never>?
+    @ObservationIgnored private var systemObservers: [any NSObjectProtocol] = []
 
     var state: TimerState { engine.state }
     var presets: [Preset] { library.presets }
@@ -32,8 +35,17 @@ final class AppModel {
         let library = Self.loadLibrary(from: store)
         presetStore = store
         self.library = library
-        engine = TimerEngine(preset: library.defaultPreset)
+
+        let history = Self.openHistory()
+        self.history = history
+        // Quitting pauses the timer, so it normally comes back paused. After a
+        // crash it may come back running; the first tick then records any phase
+        // that ended meanwhile (without auto-starting the next, see autoStartGrace).
+        engine = Self.restoreEngine(from: history) ?? TimerEngine(preset: library.defaultPreset)
+        records = Self.loadTodaysRecords(from: history)
+
         notifications.requestAuthorization()
+        observeSleepAndQuit()
         ticker = Task { [weak self] in
             while !Task.isCancelled {
                 guard let delay = self?.delayUntilNextSecond else { return }
@@ -145,23 +157,88 @@ final class AppModel {
 
     private func apply(action: String = #function, _ change: (inout TimerEngine, Date) -> [SessionRecord]) {
         let now = Date.now
-        let before = state.logDescription(at: now)
-        records += change(&engine, now)
+        let previous = state
+        let finished = change(&engine, now)
         self.now = now
-        Logger.timer.notice("\(action, privacy: .public): \(before, privacy: .public) → \(self.state.logDescription(at: now), privacy: .public)")
+        Logger.timer.notice("\(action, privacy: .public): \(previous.logDescription(at: now), privacy: .public) → \(self.state.logDescription(at: now), privacy: .public)")
+        commit(finished, changedFrom: previous)
     }
 
     private func tick() {
         let now = Date.now
-        let before = state.logDescription(at: now)
+        let previous = state
         let finished = engine.tick(now: now)
         self.now = now
-        records += finished
-        if !finished.isEmpty {
-            Logger.timer.notice("tick: \(before, privacy: .public) → \(self.state.logDescription(at: now), privacy: .public)")
-        }
-        if let last = finished.last(where: { $0.outcome == .completed }) {
+        guard !finished.isEmpty else { return }
+        Logger.timer.notice("tick: \(previous.logDescription(at: now), privacy: .public) → \(self.state.logDescription(at: now), privacy: .public)")
+        commit(finished, changedFrom: previous)
+
+        // Don't announce phases that ended long ago, e.g. while the app wasn't running.
+        if let last = finished.last(where: { $0.outcome == .completed }),
+           now.timeIntervalSince(last.endedAt) < 60 {
             notifications.phaseFinished(last.phase, next: state)
+        }
+    }
+
+    /// Time away from the Mac shouldn't count, so sleeping or quitting pauses a running timer.
+    private func observeSleepAndQuit() {
+        let pauseOn: [(NotificationCenter, Notification.Name, String)] = [
+            (NSWorkspace.shared.notificationCenter, NSWorkspace.willSleepNotification, "sleep"),
+            (.default, NSApplication.willTerminateNotification, "quit"),
+        ]
+        systemObservers = pauseOn.map { center, name, reason in
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.pauseIfRunning(reason: reason) }
+            }
+        }
+    }
+
+    private func pauseIfRunning(reason: String) {
+        guard state.status == .running else { return }
+        // Saves synchronously via commit, so the paused state is on disk before the app exits.
+        apply(action: "pause on \(reason)") { engine, now in engine.pause(now: now); return [] }
+    }
+
+    /// Records finished sessions and saves the timer state if anything changed.
+    private func commit(_ finished: [SessionRecord], changedFrom previous: TimerState) {
+        records += finished
+        guard !finished.isEmpty || state != previous else { return }
+        do {
+            try history?.save(state: state, adding: finished)
+        } catch {
+            Logger.app.error("Couldn't save history: \(error, privacy: .public)")
+        }
+    }
+
+    private static func openHistory() -> HistoryStore? {
+        do {
+            return try HistoryStore.open(at: AppPaths.history)
+        } catch {
+            Logger.app.error("Couldn't open history at \(AppPaths.history.path, privacy: .public): \(error, privacy: .public)")
+            return nil
+        }
+    }
+
+    private static func restoreEngine(from history: HistoryStore?) -> TimerEngine? {
+        do {
+            guard let state = try history?.loadTimerState() else { return nil }
+            Logger.app.notice("Restored timer: \(state.logDescription(at: .now), privacy: .public)")
+            return TimerEngine(state: state)
+        } catch {
+            Logger.app.error("Couldn't restore timer, starting fresh: \(error, privacy: .public)")
+            return nil
+        }
+    }
+
+    private static func loadTodaysRecords(from history: HistoryStore?) -> [SessionRecord] {
+        guard let history, let today = Calendar.current.dateInterval(of: .day, for: .now) else { return [] }
+        do {
+            let records = try history.records(in: today)
+            Logger.app.notice("Loaded \(records.count) sessions from today")
+            return records
+        } catch {
+            Logger.app.error("Couldn't load today's sessions: \(error, privacy: .public)")
+            return []
         }
     }
 

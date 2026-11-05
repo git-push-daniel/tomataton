@@ -36,8 +36,24 @@ enum WindowID {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+    private var terminationSignal: (any DispatchSourceSignal)?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         UNUserNotificationCenter.current().delegate = self
+        quitNormallyOnSIGTERM()
+    }
+
+    /// `kill`/`pkill` (and so `make run`) send SIGTERM, which would end the
+    /// process immediately. Turn it into a normal quit so the timer is paused
+    /// and saved like it is for ⌘Q.
+    private func quitNormallyOnSIGTERM() {
+        signal(SIGTERM, SIG_IGN)
+        let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        source.setEventHandler {
+            MainActor.assumeIsolated { NSApp.terminate(nil) }
+        }
+        source.resume()
+        terminationSignal = source
     }
 
     // Closing the window keeps the timer running in the menu bar.

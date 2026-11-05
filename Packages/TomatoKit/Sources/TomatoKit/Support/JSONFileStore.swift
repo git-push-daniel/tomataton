@@ -38,9 +38,14 @@ public struct JSONFileStore<Value: Codable>: Sendable {
 
 public enum AppPaths {
     /// `~/Library/Application Support/Tomataton`, shared by the app and (later) the CLI.
+    /// Set `TOMATATON_SUPPORT_DIR` to use a different folder, e.g. to test without touching real data.
     public static var supportDirectory: URL {
-        URL.applicationSupportDirectory.appending(path: "Tomataton", directoryHint: .isDirectory)
+        if let override = ProcessInfo.processInfo.environment["TOMATATON_SUPPORT_DIR"], !override.isEmpty {
+            return URL(filePath: override, directoryHint: .isDirectory)
+        }
+        return URL.applicationSupportDirectory.appending(path: "Tomataton", directoryHint: .isDirectory)
     }
 
     public static var presets: URL { supportDirectory.appending(path: "presets.json") }
+    public static var history: URL { supportDirectory.appending(path: "history.sqlite") }
 }

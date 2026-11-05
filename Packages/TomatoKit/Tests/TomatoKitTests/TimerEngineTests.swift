@@ -163,7 +163,7 @@ import Testing
     @Test func breakEndingWaitsForUserWhenWorkDoesNotAutoStart() {
         var engine = TimerEngine(preset: testPreset)
         engine.start(now: at(0))
-        let records = engine.tick(now: at(minutes(30)))
+        let records = engine.tick(now: at(minutes(12)))
 
         #expect(records.phases == [.work, .shortBreak])
         #expect(engine.state.phase == .work)
@@ -193,10 +193,14 @@ import Testing
         #expect(engine.state.round == 1)
     }
 
-    @Test func nonstopChainsPhasesBackToBackAfterLongGap() {
+    @Test func nonstopChainsPhasesBackToBack() {
         var engine = TimerEngine(preset: nonstopPreset)
         engine.start(now: at(0))
-        let records = engine.tick(now: at(minutes(40)))
+        var records: [SessionRecord] = []
+        // Ticking every few minutes (within the grace period), as a napping app might.
+        for minute in stride(from: 4.0, through: 40, by: 4) {
+            records += engine.tick(now: at(minutes(minute)))
+        }
 
         // 0–10 work, 10–12 short, 12–22 work, 22–27 long, 27–37 work, 37–39 short, 39– work (live)
         #expect(records.phases == [.work, .shortBreak, .work, .longBreak, .work, .shortBreak])
@@ -207,6 +211,44 @@ import Testing
         #expect(engine.state.phase == .work)
         #expect(engine.state.round == 2)
         #expect(engine.state.remaining(at: at(minutes(40))) == minutes(9))
+    }
+
+    @Test func overduePhaseIsRecordedButNextOneWaits() {
+        // E.g. the app crashed mid-session and was reopened hours later.
+        var engine = TimerEngine(preset: nonstopPreset)
+        engine.start(now: at(0))
+        let records = engine.tick(now: at(minutes(180)))
+
+        #expect(records.phases == [.work])
+        #expect(records.first?.endedAt == at(minutes(10)))
+        #expect(engine.state.phase == .shortBreak)
+        #expect(engine.state.status == .ready)
+        #expect(engine.state.remaining(at: at(minutes(180))) == minutes(2))
+    }
+
+    @Test func autoStartGraceIsInclusive() {
+        var onTime = TimerEngine(preset: nonstopPreset)
+        onTime.start(now: at(0))
+        onTime.tick(now: at(minutes(10) + TimerEngine.autoStartGrace))
+        #expect(onTime.state.status == .running)
+
+        var late = TimerEngine(preset: nonstopPreset)
+        late.start(now: at(0))
+        late.tick(now: at(minutes(10) + TimerEngine.autoStartGrace + 1))
+        #expect(late.state.status == .ready)
+    }
+
+    @Test func phasesEndingWithinGraceStillChain() {
+        // A 4-minute gap: work (0–10) ended 4 min before the tick and the
+        // break (10–12) 2 min before, so both count as on time.
+        var engine = TimerEngine(preset: nonstopPreset)
+        engine.start(now: at(0))
+        let records = engine.tick(now: at(minutes(14)))
+
+        #expect(records.phases == [.work, .shortBreak])
+        #expect(engine.state.phase == .work)
+        #expect(engine.state.status == .running)
+        #expect(engine.state.remaining(at: at(minutes(14))) == minutes(8))
     }
 }
 
