@@ -15,6 +15,13 @@ final class AppModel {
     private(set) var records: [SessionRecord]
     /// Bumped whenever stored history changes, so views can reload what they queried.
     private(set) var historyRevision = 0
+    /// Whether the global shortcut toggles the timer from any app.
+    var globalShortcutEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(globalShortcutEnabled, forKey: Preferences.globalShortcutEnabled)
+            updateGlobalShortcut()
+        }
+    }
 
     @ObservationIgnored private let presetStore: JSONFileStore<PresetLibrary>
     /// nil if the database couldn't be opened; the app then still works, without history.
@@ -23,6 +30,9 @@ final class AppModel {
     @ObservationIgnored private var ticker: Task<Void, Never>?
     @ObservationIgnored private var systemObservers: [any NSObjectProtocol] = []
     @ObservationIgnored private var commandServer: UnixSocketServer?
+    @ObservationIgnored private var hotKey: GlobalHotKey?
+    /// Held while the timer runs so App Nap doesn't delay ticks and phase-end alerts.
+    @ObservationIgnored private var runningActivity: (any NSObjectProtocol)?
 
     var state: TimerState { engine.state }
     var presets: [Preset] { library.presets }
@@ -46,10 +56,13 @@ final class AppModel {
         // that ended meanwhile (without auto-starting the next, see autoStartGrace).
         engine = Self.restoreEngine(from: history) ?? TimerEngine(preset: library.defaultPreset)
         records = Self.loadTodaysRecords(from: history)
+        globalShortcutEnabled = UserDefaults.standard.bool(forKey: Preferences.globalShortcutEnabled)
 
         notifications.requestAuthorization()
         observeSleepAndQuit()
         commandServer = startCommandServer()
+        updateGlobalShortcut()
+        preventAppNapWhileRunning()
         #if DEBUG
         if DebugSnapshot.wantsSampleHistory, storedSessions(in: DateInterval(start: .distantPast, end: .now)).isEmpty {
             addSampleHistory()
@@ -278,6 +291,7 @@ final class AppModel {
 
     /// Records finished sessions and saves the timer state if anything changed.
     private func commit(_ finished: [SessionRecord], changedFrom previous: TimerState) {
+        preventAppNapWhileRunning()
         records += finished
         if !finished.isEmpty { historyRevision += 1 }
         guard !finished.isEmpty || state != previous else { return }
@@ -285,6 +299,26 @@ final class AppModel {
             try history?.save(state: state, adding: finished)
         } catch {
             Logger.app.error("Couldn't save history: \(error, privacy: .public)")
+        }
+    }
+
+    private func preventAppNapWhileRunning() {
+        let running = state.status == .running
+        if running, runningActivity == nil {
+            runningActivity = ProcessInfo.processInfo.beginActivity(
+                options: .userInitiatedAllowingIdleSystemSleep, reason: "Timer running")
+        } else if !running, let activity = runningActivity {
+            ProcessInfo.processInfo.endActivity(activity)
+            runningActivity = nil
+        }
+    }
+
+    private func updateGlobalShortcut() {
+        if globalShortcutEnabled, hotKey == nil {
+            hotKey = GlobalHotKey { [weak self] in self?.toggle() }
+        } else if !globalShortcutEnabled, let registered = hotKey {
+            registered.unregister()
+            hotKey = nil
         }
     }
 

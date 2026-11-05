@@ -67,8 +67,8 @@ enum AppLauncher {
         return NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier)
     }
 
-    /// Opens the app without bringing it to the front, passing along
-    /// TOMATATON_SUPPORT_DIR so a test data folder is honored.
+    /// Opens the app in the menu bar only (no window, not in front), passing
+    /// along TOMATATON_SUPPORT_DIR so a test data folder is honored.
     static func launch() throws {
         guard let appURL else { throw CLIError("Couldn't find Tomataton.app.") }
         var arguments = ["-g", "-a", appURL.path]
@@ -77,6 +77,7 @@ enum AppLauncher {
             // `open` would just wake the already-running app using the real data.
             arguments += ["-n", "--env", "TOMATATON_SUPPORT_DIR=\(supportDir)"]
         }
+        arguments += ["--args", "--background"]  // must come last
         let open = Process()
         open.executableURL = URL(filePath: "/usr/bin/open")
         open.arguments = arguments

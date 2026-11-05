@@ -46,6 +46,8 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: Tomataton
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.productivity
         INFOPLIST_KEY_NSHumanReadableCopyright: ""
+        # Regenerate the icon with: swift scripts/make-icon.swift App/Resources/Assets.xcassets/AppIcon.appiconset
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
 
   tomataton-cli:
     type: tool

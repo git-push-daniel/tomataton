@@ -5,6 +5,7 @@ enum Preferences {
     static let notificationsEnabled = "notificationsEnabled"
     static let soundEnabled = "soundEnabled"
     static let soundName = "soundName"
+    static let globalShortcutEnabled = "globalShortcutEnabled"
 
     /// Registered at launch so `@AppStorage` and direct reads agree on defaults.
     static func registerDefaults() {
@@ -12,6 +13,7 @@ enum Preferences {
             notificationsEnabled: true,
             soundEnabled: true,
             soundName: AlertSound.defaultName,
+            globalShortcutEnabled: false,
         ])
     }
 }
