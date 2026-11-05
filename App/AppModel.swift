@@ -22,6 +22,7 @@ final class AppModel {
     @ObservationIgnored private let notifications = NotificationService()
     @ObservationIgnored private var ticker: Task<Void, Never>?
     @ObservationIgnored private var systemObservers: [any NSObjectProtocol] = []
+    @ObservationIgnored private var commandServer: UnixSocketServer?
 
     var state: TimerState { engine.state }
     var presets: [Preset] { library.presets }
@@ -48,6 +49,7 @@ final class AppModel {
 
         notifications.requestAuthorization()
         observeSleepAndQuit()
+        commandServer = startCommandServer()
         #if DEBUG
         if DebugSnapshot.wantsSampleHistory, storedSessions(in: DateInterval(start: .distantPast, end: .now)).isEmpty {
             addSampleHistory()
@@ -65,12 +67,21 @@ final class AppModel {
     // MARK: - Actions
 
     func toggle() { apply { engine, now in engine.toggle(now: now); return [] } }
+    func resume() { apply { engine, now in engine.resume(now: now); return [] } }
+    func pause() { apply { engine, now in engine.pause(now: now); return [] } }
     func skip() { apply { $0.skip(now: $1) } }
     func restart() { apply { $0.restartPhase(now: $1) } }
     func stop() { apply { $0.stop(now: $1) } }
 
+    /// Abandons whatever is in progress and starts a fresh cycle with `preset`.
+    func start(_ preset: Preset) { apply { $0.start(preset: preset, now: $1) } }
+
     func adjust(minutes: Int) {
-        apply { engine, now in engine.adjust(by: TimeInterval(minutes * 60), now: now); return [] }
+        adjust(seconds: minutes * 60)
+    }
+
+    func adjust(seconds: Int) {
+        apply { engine, now in engine.adjust(by: TimeInterval(seconds), now: now); return [] }
     }
 
     func adjustRounds(by delta: Int) {
@@ -88,9 +99,10 @@ final class AppModel {
 
     // MARK: - Presets
 
+    /// Adds a copy of the default preset named "Custom", or `preset` when given.
     @discardableResult
-    func addPreset() -> Preset {
-        changeLibrary { $0.add() }
+    func addPreset(_ preset: Preset? = nil) -> Preset {
+        changeLibrary { $0.add(preset) }
     }
 
     /// Saves edits; if the preset is the one in use, the timer picks them up too.
@@ -208,6 +220,11 @@ final class AppModel {
     }
     #endif
 
+    /// Brings `now` up to date before answering a request between ticks.
+    func refreshNow() {
+        now = .now
+    }
+
     // MARK: - Internals
 
     private func apply(action: String = #function, _ change: (inout TimerEngine, Date) -> [SessionRecord]) {
@@ -246,6 +263,11 @@ final class AppModel {
                 MainActor.assumeIsolated { self?.pauseIfRunning(reason: reason) }
             }
         }
+        systemObservers.append(NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.commandServer?.stop() }  // removes the socket file
+        })
     }
 
     private func pauseIfRunning(reason: String) {

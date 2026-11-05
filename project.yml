@@ -21,6 +21,9 @@ settings:
 packages:
   TomatoKit:
     path: Packages/TomatoKit
+  ArgumentParser:
+    url: https://github.com/apple/swift-argument-parser
+    from: 1.8.2
 
 targets:
   Tomataton:
@@ -50,6 +53,7 @@ targets:
     sources: [CLI]
     dependencies:
       - package: TomatoKit
+      - package: ArgumentParser
     settings:
       base:
         PRODUCT_NAME: tomataton
