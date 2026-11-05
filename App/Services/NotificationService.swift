@@ -1,3 +1,4 @@
+import Foundation
 import TomatoKit
 import UserNotifications
 
@@ -10,8 +11,15 @@ final class NotificationService {
     }
 
     func phaseFinished(_ finished: Phase, next: TimerState) {
+        let defaults = UserDefaults.standard
+        // The sound is played here rather than attached to the notification so
+        // it can be chosen in Settings and works with notifications turned off.
+        if defaults.bool(forKey: Preferences.soundEnabled) {
+            AlertSound.play(defaults.string(forKey: Preferences.soundName) ?? AlertSound.defaultName)
+        }
+        guard defaults.bool(forKey: Preferences.notificationsEnabled) else { return }
+
         let content = UNMutableNotificationContent()
-        content.sound = .default
         switch finished {
         case .work:
             content.title = "Focus session done"

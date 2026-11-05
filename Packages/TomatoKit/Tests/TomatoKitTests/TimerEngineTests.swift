@@ -413,3 +413,47 @@ import Testing
         #expect(engine.state.totalRounds == 4)
     }
 }
+
+@Suite struct PresetUpdateTests {
+    private func edited(_ change: (inout Preset) -> Void) -> Preset {
+        var preset = testPreset
+        change(&preset)
+        return preset
+    }
+
+    @Test func editingWhileReadyChangesUpcomingPhase() {
+        var engine = TimerEngine(preset: testPreset)
+        engine.updatePreset(edited { $0.workMinutes = 20 })
+        #expect(engine.state.remaining(at: at(0)) == minutes(20))
+    }
+
+    @Test func runningPhaseKeepsItsLengthButNextPhasesUseEdits() {
+        var engine = TimerEngine(preset: testPreset)
+        engine.start(now: at(0))
+        engine.updatePreset(edited { $0.workMinutes = 20; $0.shortBreakMinutes = 4 })
+        #expect(engine.state.remaining(at: at(0)) == minutes(10))
+
+        engine.tick(now: at(minutes(10)))
+        #expect(engine.state.phase == .shortBreak)
+        #expect(engine.state.phaseDuration == minutes(4))
+    }
+
+    @Test func roundCountFollowsPresetButNeverDropsBelowCurrentRound() {
+        var engine = TimerEngine(preset: testPreset)
+        engine.updatePreset(edited { $0.roundsBeforeLongBreak = 4 })
+        #expect(engine.state.totalRounds == 4)
+
+        engine.skip(now: at(0))  // short break 1
+        engine.skip(now: at(0))  // work 2
+        engine.skip(now: at(0))  // short break 2
+        engine.updatePreset(edited { $0.roundsBeforeLongBreak = 1 })
+        #expect(engine.state.totalRounds == 3)  // at least one more round after this break
+    }
+
+    @Test func renamingIsReflectedInRecords() {
+        var engine = TimerEngine(preset: testPreset)
+        engine.start(now: at(0))
+        engine.updatePreset(edited { $0.name = "Renamed" })
+        #expect(engine.stop(now: at(minutes(1))).first?.presetName == "Renamed")
+    }
+}

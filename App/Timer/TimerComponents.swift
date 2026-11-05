@@ -88,13 +88,17 @@ struct CountdownText: View {
 struct PresetChips: View {
     @Environment(AppModel.self) private var model
 
+    /// Presets beyond this many go in an overflow menu so the row fits the popover.
+    private let visibleCount = 3
+
     var body: some View {
+        let inUse = model.state.preset.id
         HStack(spacing: 6) {
-            ForEach(model.presets) { preset in
-                let selected = preset.id == model.state.preset.id
+            ForEach(model.presets.prefix(visibleCount)) { preset in
+                let selected = preset.id == inUse
                 Button { model.choose(preset) } label: {
                     VStack(spacing: 1) {
-                        Text(preset.name).font(.callout.weight(.medium))
+                        Text(preset.name).font(.callout.weight(.medium)).lineLimit(1)
                         Text("\(preset.workMinutes)/\(preset.shortBreakMinutes)/\(preset.longBreakMinutes)")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
@@ -105,6 +109,23 @@ struct PresetChips: View {
                 .tint(selected ? model.state.phase.tint : nil)
                 .help("\(preset.workMinutes) min focus, \(preset.shortBreakMinutes) min break, "
                     + "\(preset.longBreakMinutes) min long break every \(preset.roundsBeforeLongBreak) rounds")
+            }
+            if model.presets.count > visibleCount {
+                let overflow = model.presets.dropFirst(visibleCount)
+                Menu("More presets", systemImage: "ellipsis") {
+                    ForEach(overflow) { preset in
+                        Toggle(preset.name, isOn: Binding {
+                            preset.id == inUse
+                        } set: { _ in
+                            model.choose(preset)
+                        })
+                    }
+                }
+                .labelStyle(.iconOnly)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .tint(overflow.contains { $0.id == inUse } ? model.state.phase.tint : nil)
+                .help("More presets")
             }
         }
     }

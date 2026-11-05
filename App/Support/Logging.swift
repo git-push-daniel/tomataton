@@ -3,6 +3,7 @@ import TomatoKit
 
 extension Logger {
     static let timer = Logger(subsystem: "com.tomataton.Tomataton", category: "timer")
+    static let app = Logger(subsystem: "com.tomataton.Tomataton", category: "app")
 }
 
 extension TimerState {

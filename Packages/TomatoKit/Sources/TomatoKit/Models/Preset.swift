@@ -42,6 +42,36 @@ public struct Preset: Codable, Sendable, Hashable, Identifiable {
     public func autoStarts(_ phase: Phase) -> Bool {
         phase.isRest ? autoStartBreaks : autoStartWork
     }
+
+    // MARK: - Validation
+
+    public static let workRange = 1...180
+    public static let shortBreakRange = 1...60
+    public static let longBreakRange = 1...120
+    public static let roundsRange = 1...TimerEngine.maximumRounds
+    public static let maximumNameLength = 30
+
+    /// A copy with every value clamped to its allowed range and a usable name.
+    public func sanitized() -> Preset {
+        var copy = self
+        copy.name = Self.cleanName(name)
+        copy.workMinutes = workMinutes.clamped(to: Self.workRange)
+        copy.shortBreakMinutes = shortBreakMinutes.clamped(to: Self.shortBreakRange)
+        copy.longBreakMinutes = longBreakMinutes.clamped(to: Self.longBreakRange)
+        copy.roundsBeforeLongBreak = roundsBeforeLongBreak.clamped(to: Self.roundsRange)
+        return copy
+    }
+
+    static func cleanName(_ name: String) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Untitled" : String(trimmed.prefix(maximumNameLength))
+    }
+}
+
+extension Comparable {
+    func clamped(to range: ClosedRange<Self>) -> Self {
+        Swift.min(Swift.max(self, range.lowerBound), range.upperBound)
+    }
 }
 
 extension Preset {
@@ -60,4 +90,9 @@ extension Preset {
     )
 
     public static let builtIn: [Preset] = [.classic, .deep, .quick]
+
+    /// Whether this is one of the presets Tomataton ships with (even if edited).
+    public var isBuiltIn: Bool {
+        Self.builtIn.contains { $0.id == id }
+    }
 }

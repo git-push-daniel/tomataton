@@ -3,6 +3,7 @@ import SwiftUI
 struct PopoverView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -36,6 +37,11 @@ struct PopoverView: View {
                     NSApp.activate()
                 }
                 Spacer()
+                Button("Settings…") {
+                    NSApp.activate()
+                    openSettings()
+                }
+                .keyboardShortcut(",")
                 Button("Quit") { NSApp.terminate(nil) }
                     .keyboardShortcut("q")
             }

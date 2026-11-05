@@ -7,17 +7,19 @@ import TomatoKit
 @MainActor
 @Observable
 final class AppModel {
-    private(set) var engine = TimerEngine(preset: .classic)
+    private(set) var engine: TimerEngine
+    private(set) var library: PresetLibrary
     /// Refreshed by the ticker so views that read it re-render the countdown.
     private(set) var now = Date.now
     /// Kept in memory until history is persisted (milestone 4).
     private(set) var records: [SessionRecord] = []
-    let presets = Preset.builtIn
 
+    @ObservationIgnored private let presetStore: JSONFileStore<PresetLibrary>
     @ObservationIgnored private let notifications = NotificationService()
     @ObservationIgnored private var ticker: Task<Void, Never>?
 
     var state: TimerState { engine.state }
+    var presets: [Preset] { library.presets }
     var remaining: TimeInterval { state.remaining(at: now) }
     var progress: Double {
         guard state.phaseDuration > 0 else { return 0 }
@@ -25,6 +27,12 @@ final class AppModel {
     }
 
     init() {
+        Preferences.registerDefaults()
+        let store = JSONFileStore<PresetLibrary>(url: AppPaths.presets)
+        let library = Self.loadLibrary(from: store)
+        presetStore = store
+        self.library = library
+        engine = TimerEngine(preset: library.defaultPreset)
         notifications.requestAuthorization()
         ticker = Task { [weak self] in
             while !Task.isCancelled {
@@ -56,6 +64,70 @@ final class AppModel {
             apply { $0.start(preset: preset, now: $1) }
         } else {
             apply { $0.select(preset: preset, now: $1) }
+        }
+    }
+
+    // MARK: - Presets
+
+    @discardableResult
+    func addPreset() -> Preset {
+        changeLibrary { $0.add() }
+    }
+
+    /// Saves edits; if the preset is the one in use, the timer picks them up too.
+    /// Returns the stored value, whose name may have been made unique.
+    @discardableResult
+    func updatePreset(_ preset: Preset) -> Preset? {
+        guard let stored = changeLibrary({ $0.update(preset) }) else { return nil }
+        if stored.id == state.preset.id {
+            apply { engine, _ in engine.updatePreset(stored); return [] }
+        }
+        return stored
+    }
+
+    func deletePreset(id: Preset.ID) {
+        changeLibrary { $0.delete(id: id) }
+    }
+
+    func movePresets(fromOffsets source: IndexSet, toOffset destination: Int) {
+        changeLibrary { $0.move(fromOffsets: source, toOffset: destination) }
+    }
+
+    func setDefaultPreset(id: Preset.ID) {
+        changeLibrary { $0.setDefault(id: id) }
+    }
+
+    /// Resets edited built-ins and re-adds deleted ones. Returns the presets that changed.
+    @discardableResult
+    func restoreBuiltInPresets() -> [Preset] {
+        let restored = changeLibrary { $0.restoreBuiltIns() }
+        if let inUse = restored.first(where: { $0.id == state.preset.id }) {
+            apply { engine, _ in engine.updatePreset(inUse); return [] }
+        }
+        return restored
+    }
+
+    @discardableResult
+    private func changeLibrary<Result>(_ change: (inout PresetLibrary) -> Result) -> Result {
+        let result = change(&library)
+        do {
+            try presetStore.save(library)
+        } catch {
+            Logger.app.error("Couldn't save presets: \(error, privacy: .public)")
+        }
+        return result
+    }
+
+    private static func loadLibrary(from store: JSONFileStore<PresetLibrary>) -> PresetLibrary {
+        do {
+            let library = try store.load() ?? .standard
+            Logger.app.notice("Loaded \(library.presets.count) presets (default: \(library.defaultPreset.name, privacy: .public))")
+            return library
+        } catch {
+            // Keep the unreadable file around instead of overwriting it on the next save.
+            let backup = try? store.quarantine()
+            Logger.app.error("Couldn't read presets (\(error, privacy: .public)); moved to \(backup?.path ?? "-", privacy: .public)")
+            return .standard
         }
     }
 

@@ -127,6 +127,20 @@ public struct TimerEngine: Sendable {
         state.totalRounds = min(max(state.totalRounds + delta, lowerBound), Self.maximumRounds)
     }
 
+    // MARK: - Preset edits
+
+    /// Applies edits to the preset in use. A phase that has already started
+    /// keeps its length; everything after it uses the new values. Round
+    /// adjustments are replaced by the preset's round count.
+    public mutating func updatePreset(_ preset: Preset) {
+        state.preset = preset
+        if state.phaseStartedAt == nil {
+            state.phaseDuration = preset.duration(for: state.phase)
+        }
+        state.totalRounds = preset.roundsBeforeLongBreak
+        adjustRounds(by: 0)  // clamp so the current round still fits
+    }
+
     // MARK: - Internals
 
     private mutating func begin(at date: Date) {

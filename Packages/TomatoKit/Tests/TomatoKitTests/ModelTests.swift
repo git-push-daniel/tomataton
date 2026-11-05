@@ -24,6 +24,17 @@ import Testing
         #expect(Preset.classic.id.uuidString == "00000000-0000-0000-0000-000000000001")
     }
 
+    @Test func builtInIsDecidedByIDNotValues() {
+        var edited = Preset.deep
+        edited.name = "Renamed"
+        edited.workMinutes = 5
+        #expect(edited.isBuiltIn)
+
+        var library = PresetLibrary.standard
+        #expect(!library.add().isBuiltIn)  // a copy of Classic is a custom preset
+        #expect(!testPreset.isBuiltIn)
+    }
+
     @Test func onlyWorkIsNotRest() {
         #expect(Phase.allCases.filter { !$0.isRest } == [.work])
     }

@@ -47,8 +47,7 @@ struct MainWindow: View {
             ContentUnavailableView("Stats", systemImage: Section.stats.symbol,
                                    description: Text("Daily and weekly charts are coming in milestone 5."))
         case .presets:
-            ContentUnavailableView("Presets", systemImage: Section.presets.symbol,
-                                   description: Text("The preset editor is coming in milestone 3."))
+            PresetsView()
         }
     }
 }
