@@ -3,6 +3,11 @@
 A Pomodoro timer for macOS that you can use from the menu bar, a small window or the terminal.
 It tracks focus and rest time per day and charts them by week.
 
+Why? Too many pomodoro timers with features I don't need, paid crap or vibe coded by a random guy anyway.
+So I just vibe coded my own lol so at least it's what I wanted.
+It's slop - use it at your own risk or do whatever you want with it from this point on
+(realistically it's another random timer vibe coded by a random guy to you - maybe just make your own from scratch).
+
 ## Install
 
 You need macOS 15+, Xcode and XcodeGen (`brew install xcodegen`).
@@ -36,3 +41,7 @@ make test    # unit tests
 ```
 
 Data lives in `~/Library/Application Support/Tomataton`.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
