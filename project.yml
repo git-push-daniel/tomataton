@@ -1,0 +1,56 @@
+# XcodeGen spec — run `make gen` (or `xcodegen generate`) to produce Tomataton.xcodeproj.
+# The .xcodeproj is generated and gitignored; edit this file instead.
+name: Tomataton
+options:
+  bundleIdPrefix: com.tomataton
+  deploymentTarget:
+    macOS: "15.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    # Ad-hoc signing is enough to run locally. To use your Apple ID instead,
+    # set CODE_SIGN_STYLE: Automatic and DEVELOPMENT_TEAM: <your team id>.
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: "-"
+    ENABLE_APP_SANDBOX: NO
+
+packages:
+  TomatoKit:
+    path: Packages/TomatoKit
+
+targets:
+  Tomataton:
+    type: application
+    platform: macOS
+    sources: [App]
+    dependencies:
+      - package: TomatoKit
+      # The CLI ships inside the app bundle at Contents/Helpers/tomataton.
+      - target: tomataton-cli
+        embed: true
+        codeSign: true
+        copy:
+          destination: wrapper
+          subpath: Contents/Helpers
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tomataton.Tomataton
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Tomataton
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.productivity
+        INFOPLIST_KEY_NSHumanReadableCopyright: ""
+
+  tomataton-cli:
+    type: tool
+    platform: macOS
+    sources: [CLI]
+    dependencies:
+      - package: TomatoKit
+    settings:
+      base:
+        PRODUCT_NAME: tomataton
+        PRODUCT_BUNDLE_IDENTIFIER: com.tomataton.cli
