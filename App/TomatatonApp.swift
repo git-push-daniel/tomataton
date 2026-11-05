@@ -14,6 +14,14 @@ struct TomatatonApp: App {
         // The window can shrink a little but never grow past its default size.
         .windowResizability(.contentSize)
         .defaultSize(MainWindow.maxSize)
+        .commands {
+            #if DEBUG
+            CommandMenu("Debug") {
+                Button("Add Sample History") { model.addSampleHistory() }
+                Button("Remove Sample History") { model.removeSampleHistory() }
+            }
+            #endif
+        }
 
         MenuBarExtra {
             PopoverView()
@@ -41,6 +49,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     func applicationDidFinishLaunching(_ notification: Notification) {
         UNUserNotificationCenter.current().delegate = self
         quitNormallyOnSIGTERM()
+        #if DEBUG
+        DebugSnapshot.runIfRequested()
+        #endif
     }
 
     /// `kill`/`pkill` (and so `make run`) send SIGTERM, which would end the

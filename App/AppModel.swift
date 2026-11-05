@@ -13,6 +13,8 @@ final class AppModel {
     private(set) var now = Date.now
     /// Today's sessions as loaded at launch, plus every session finished since.
     private(set) var records: [SessionRecord]
+    /// Bumped whenever stored history changes, so views can reload what they queried.
+    private(set) var historyRevision = 0
 
     @ObservationIgnored private let presetStore: JSONFileStore<PresetLibrary>
     /// nil if the database couldn't be opened; the app then still works, without history.
@@ -46,6 +48,11 @@ final class AppModel {
 
         notifications.requestAuthorization()
         observeSleepAndQuit()
+        #if DEBUG
+        if DebugSnapshot.wantsSampleHistory, storedSessions(in: DateInterval(start: .distantPast, end: .now)).isEmpty {
+            addSampleHistory()
+        }
+        #endif
         ticker = Task { [weak self] in
             while !Task.isCancelled {
                 guard let delay = self?.delayUntilNextSecond else { return }
@@ -143,15 +150,63 @@ final class AppModel {
         }
     }
 
-    // MARK: - Today
+    // MARK: - History
+
+    /// The phase in progress as a provisional record. It counts like a stop:
+    /// its active time so far, never a completed pomodoro.
+    var liveRecord: SessionRecord? {
+        guard var live = state.record(endingAt: now, outcome: .stopped) else { return nil }
+        live.id = Self.liveRecordID  // stable, so lists don't rebuild the row every second
+        return live
+    }
+
+    static let liveRecordID = UUID(uuidString: "00000000-0000-0000-0000-00000000FFFF")!
 
     /// Today's totals, including the phase in progress.
     var today: Totals {
         guard let day = Calendar.current.dateInterval(of: .day, for: now) else { return Totals() }
-        // The live phase counts like a stop: its active time, never a completed pomodoro.
-        let live = state.record(endingAt: now, outcome: .stopped)
-        return Totals(records + (live.map { [$0] } ?? []), in: day)
+        return Totals(records + (liveRecord.map { [$0] } ?? []), in: day)
     }
+
+    /// Stored sessions overlapping `interval`, oldest first (not including the live phase).
+    func storedSessions(in interval: DateInterval) -> [SessionRecord] {
+        guard let history else {
+            return records.filter { $0.startedAt < interval.end && $0.endedAt > interval.start }
+        }
+        do {
+            return try history.records(in: interval)
+        } catch {
+            Logger.app.error("Couldn't load sessions: \(error, privacy: .public)")
+            return []
+        }
+    }
+
+    #if DEBUG
+    /// Adds three weeks of tagged fake sessions (debug builds only).
+    func addSampleHistory() {
+        guard let history else { return }
+        let earliestReal = (try? history.records(in: DateInterval(start: .distantPast, end: .now)))?
+            .first { $0.tag != SampleHistory.tag }?.startedAt ?? .now
+        // Samples end before any real session so the two never overlap.
+        let samples = SampleHistory.generate(days: 21, endingAt: min(earliestReal, .now), calendar: .current)
+        changeHistory("add sample history") { try history.insert(samples) }
+    }
+
+    func removeSampleHistory() {
+        guard let history else { return }
+        changeHistory("remove sample history") { _ = try history.deleteRecords(tagged: SampleHistory.tag) }
+    }
+
+    private func changeHistory(_ action: String, _ change: () throws -> Void) {
+        do {
+            try change()
+            records = Self.loadTodaysRecords(from: history)
+            historyRevision += 1
+        } catch {
+            Logger.app.error("Couldn't \(action, privacy: .public): \(error, privacy: .public)")
+        }
+    }
+    #endif
 
     // MARK: - Internals
 
@@ -202,6 +257,7 @@ final class AppModel {
     /// Records finished sessions and saves the timer state if anything changed.
     private func commit(_ finished: [SessionRecord], changedFrom previous: TimerState) {
         records += finished
+        if !finished.isEmpty { historyRevision += 1 }
         guard !finished.isEmpty || state != previous else { return }
         do {
             try history?.save(state: state, adding: finished)

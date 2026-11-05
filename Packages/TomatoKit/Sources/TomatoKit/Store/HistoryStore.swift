@@ -35,6 +35,14 @@ public struct HistoryStore: Sendable {
         }
     }
 
+    /// Deletes every session with `tag` (e.g. sample data). Returns how many were deleted.
+    @discardableResult
+    public func deleteRecords(tagged tag: String) throws -> Int {
+        try writer.write { db in
+            try SessionRecord.filter(Column("tag") == tag).deleteAll(db)
+        }
+    }
+
     /// Saves the timer state and any newly finished records atomically.
     public func save(state: TimerState, adding records: [SessionRecord] = []) throws {
         let row = AppStateRow(key: AppStateRow.timerKey, value: try JSONEncoder().encode(state))

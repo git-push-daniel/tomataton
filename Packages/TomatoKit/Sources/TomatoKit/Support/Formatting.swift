@@ -11,9 +11,15 @@ extension TimeInterval {
             : String(format: "%d:%02d", minutes, seconds)
     }
 
-    /// Summary style: "2h 15m", "35m". Partial minutes are dropped.
+    /// Like `shortDuration`, but shows seconds under a minute: "45s", "25m", "1h 5m".
+    public var sessionDuration: String {
+        self < 60 ? "\(Swift.max(0, Int(self)))s" : shortDuration
+    }
+
+    /// Summary style: "2h 15m", "1h", "35m". Partial minutes are dropped.
     public var shortDuration: String {
         let minutes = Swift.max(0, Int(self) / 60)
-        return minutes >= 60 ? "\(minutes / 60)h \(minutes % 60)m" : "\(minutes)m"
+        guard minutes >= 60 else { return "\(minutes)m" }
+        return minutes % 60 == 0 ? "\(minutes / 60)h" : "\(minutes / 60)h \(minutes % 60)m"
     }
 }

@@ -21,7 +21,16 @@ struct MainWindow: View {
     static let maxSize = CGSize(width: 720, height: 540)
     static let sidebarWidth: CGFloat = 170
 
-    @State private var selection: Section = .timer
+    @State private var selection: Section = Self.initialSection
+
+    private static var initialSection: Section {
+        #if DEBUG
+        if let name = DebugSnapshot.initialSection, let section = Section(rawValue: name.capitalized) {
+            return section
+        }
+        #endif
+        return .timer
+    }
 
     var body: some View {
         NavigationSplitView {
@@ -44,8 +53,7 @@ struct MainWindow: View {
         case .timer:
             TimerView()
         case .stats:
-            ContentUnavailableView("Stats", systemImage: Section.stats.symbol,
-                                   description: Text("Daily and weekly charts are coming in milestone 5."))
+            StatsView()
         case .presets:
             PresetsView()
         }
